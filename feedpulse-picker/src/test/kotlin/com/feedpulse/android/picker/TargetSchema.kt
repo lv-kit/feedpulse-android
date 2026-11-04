@@ -1,8 +1,7 @@
 package com.feedpulse.android.picker
 
 /**
- * web #106 の `target` 検証（sanitizeAutoContext）の写し。issue の受け入れ条件:
- * platform は許可値、各文字列に長さ上限、rect は有限の数値のみ。サーバー側の上限が確定したらここを合わせる。
+ * web #106 の sanitizeTarget（packages/shared/src/context.ts）の写し。
  */
 object TargetSchema {
     private val platforms = setOf("web", "ios", "android", "flutter", "react-native")
@@ -19,13 +18,15 @@ object TargetSchema {
             if (x.length > max) v += "$k too long"
             if (x.any { it.isISOControl() }) v += "$k control char"
         }
-        str("screen", TargetLimits.SCREEN, required = true)
+        str("screen", TargetLimits.SCREEN)
+        if (m["id"] == null && m["path"] == null) v += "id or path required"
         str("id", TargetLimits.ID); str("path", TargetLimits.PATH); str("label", TargetLimits.LABEL_MAX)
         if (m.containsKey("rect")) {
             val r = m["rect"] as? Map<*, *>
             if (r == null) v += "rect type" else for (k in listOf("x", "y", "w", "h")) {
                 val n = r[k]
-                if (n !is Number || !n.toDouble().isFinite()) v += "rect.$k"
+                if (n !is Number || !n.toDouble().isFinite() || Math.abs(n.toDouble()) > 1_000_000) v += "rect.$k"
+                else if ((k == "w" || k == "h") && n.toDouble() < 0) v += "rect.$k negative"
             }
         }
         return v

@@ -16,7 +16,7 @@ import java.util.WeakHashMap
 
 /** [Feedpulse.pickTarget] のオプション。 */
 data class PickerOptions(
-    /** label に残す先頭文字数（0〜120）。0 なら label を返さない。 */
+    /** label に残す先頭文字数（0〜200）。0 なら label を返さない。 */
     val labelMaxChars: Int = 40,
     /** target.screen。null なら Activity のクラス名（R8 で変わるので本番では指定を推奨）。 */
     val screenName: String? = null,

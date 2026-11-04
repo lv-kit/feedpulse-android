@@ -40,7 +40,7 @@ Compose の自動取得（text / testTag）は `ViewRootForTest`（半内部 API
 ### target
 
 `{"platform":"android","screen":"…","id":"…","path":"…","rect":{"x","y","w","h"},"label":"…"}`。null のキーは出さない。rect は画面座標の px。
-上限（`TargetLimits`）: screen 256 / id 128 / path 512 / label 120 文字。web #106 の確定値に合わせること。
+上限（`TargetLimits`）: screen 512 / id 200 / path 512 / label 200 文字（web #106 の TARGET_LIMITS と同じ）。rect は有限・|値|≤1,000,000・w/h≥0。id か path のどちらか必須。
 
 ## ビルド
 

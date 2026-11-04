@@ -1,11 +1,11 @@
 package com.feedpulse.android.picker
 
-/** サーバー側（#106）の上限に合わせた長さ制限。サーバーは超過した target 全体を捨てるので SDK 側で切る。 */
+/** サーバー側（#106 TARGET_LIMITS）の上限。サーバーは超過した target 全体を捨てるので SDK 側で切る。 */
 internal object TargetLimits {
-    const val SCREEN = 256
-    const val ID = 128
+    const val SCREEN = 512
+    const val ID = 200
     const val PATH = 512
-    const val LABEL_MAX = 120 // PickerOptions.labelMaxChars の上限
+    const val LABEL_MAX = 200 // PickerOptions.labelMaxChars の上限
 }
 
 internal object Sanitize {
