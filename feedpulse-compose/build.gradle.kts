@@ -1,4 +1,5 @@
 plugins {
+    `maven-publish`
     id("com.android.library")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
@@ -20,6 +21,25 @@ android {
 }
 
 kotlin { jvmToolchain(17) }
+
+group = "com.feedpulse"
+version = "0.1.0"
+
+afterEvaluate {
+    publishing {
+        publications {
+            register<MavenPublication>("release") {
+                from(components["release"])
+                artifactId = "feedpulse-compose"
+                pom {
+                    name.set("feedpulse-compose")
+                    description.set("Feedpulse Android SDK: Jetpack Compose 向け Modifier.feedpulseId")
+                    url.set("https://github.com/lv-kit/feedpulse-android")
+                }
+            }
+        }
+    }
+}
 
 dependencies {
     api(project(":feedpulse-picker"))
