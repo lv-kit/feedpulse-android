@@ -35,6 +35,12 @@ afterEvaluate {
                     name.set("feedpulse-compose")
                     description.set("Feedpulse Android SDK: Jetpack Compose 向け Modifier.feedpulseId")
                     url.set("https://github.com/lv-kit/feedpulse-android")
+                    licenses {
+                        license {
+                            name.set("MIT License")
+                            url.set("https://opensource.org/licenses/MIT")
+                        }
+                    }
                 }
             }
         }
