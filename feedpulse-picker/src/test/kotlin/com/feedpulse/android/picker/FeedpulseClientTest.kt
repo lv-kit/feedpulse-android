@@ -1,6 +1,17 @@
 package com.feedpulse.android.picker
 
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import okhttp3.mockwebserver.SocketPolicy
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -509,5 +520,80 @@ class FeedpulseClientTest {
         // 未知のブロック ID は type エラー。
         val form = FeedpulseForm("i", "s", "n", "bug", 1, FeedpulseFormDefinition(false, emptyList()))
         assertEquals(FieldErrorCode.TYPE, FormValidator.validate(form, mapOf("zzz" to "x"))["zzz"])
+    }
+
+    // ---------- single-flight / キャンセル ----------
+
+    @Test
+    fun concurrentInvalidSession_refetchesSessionOnlyOnce() {
+        val challenges = AtomicInteger()
+        val sessions = AtomicInteger()
+        val rejected = CountDownLatch(2)
+        val transport = HttpTransport { req ->
+            val path = req.url.substringAfter("//").substringAfter('/').let { "/" + it.substringBefore('?') }
+            when (path) {
+                "/v1/native/challenge" -> {
+                    challenges.incrementAndGet()
+                    HttpResponse(200, emptyMap(), respBody("challenge-ok").toString())
+                }
+                "/v1/native/session" -> {
+                    val n = sessions.incrementAndGet()
+                    HttpResponse(200, emptyMap(), JSONObject().put("session", "s$n").put("expiresAt", now / 1000 + 900).toString())
+                }
+                "/v1/config" ->
+                    if (req.headers["Authorization"] == "Bearer s1") {
+                        // 2 本とも s1 で出てから、揃って invalid_session を返す。
+                        rejected.countDown()
+                        rejected.await(5, TimeUnit.SECONDS)
+                        HttpResponse(401, emptyMap(), respBody("config-session-expired").toString())
+                    } else {
+                        HttpResponse(200, emptyMap(), respBody("config-ok").toString())
+                    }
+                else -> HttpResponse(404, emptyMap(), "{}")
+            }
+        }
+        val c = client(transport = transport)
+        runBlocking {
+            val results = (1..2).map { async(Dispatchers.Default) { c.refreshConfig() } }.awaitAll()
+            results.forEach { assertFalse(it.isStale) }
+        }
+        assertEquals(0, rejected.count)
+        assertEquals("challenge は初回 + invalid_session 後の 1 回だけ", 2, challenges.get())
+        assertEquals("session も初回 + invalid_session 後の 1 回だけ", 2, sessions.get())
+    }
+
+    @Test
+    fun cancellingScope_disconnectsInFlightRequest() {
+        happyRoutes()
+        route("/v1/native/challenge", MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
+        val c = client() // 既定の UrlConnectionTransport（読み取りタイムアウト 30 秒）
+        runBlocking {
+            val started = CompletableDeferred<Unit>()
+            val job = launch(Dispatchers.Default) {
+                started.complete(Unit)
+                c.ensureSession(false)
+            }
+            started.await()
+            withTimeout(5_000) { while (synchronized(this@FeedpulseClientTest) { seen.isEmpty() }) delay(10) }
+            val t0 = System.nanoTime()
+            job.cancel()
+            // 接続が切られるので、30 秒の読み取りタイムアウトを待たず直ちに終わる。
+            withTimeout(5_000) { job.join() }
+            assertTrue(job.isCancelled)
+            assertTrue(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - t0) < 5_000)
+        }
+    }
+
+    @Test
+    fun cancelledBeforeConnect_abortsWithoutSendingRequest() {
+        happyRoutes()
+        val handle = CancelHandle().apply { cancel() }
+        val req = HttpRequest("GET", server.url("/v1/config").toString(), emptyMap())
+        try {
+            UrlConnectionTransport().execute(req, handle)
+            fail("IOException が投げられなかった")
+        } catch (_: IOException) {
+        }
+        assertTrue(seen.isEmpty())
     }
 }

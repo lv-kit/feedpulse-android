@@ -7,6 +7,12 @@ import java.util.Locale
 import java.util.TimeZone
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -174,10 +180,15 @@ class FeedpulseClient internal constructor(
 
     // ---- セッション ----
 
-    internal suspend fun ensureSession(forceNew: Boolean): String = sessionMutex.withLock {
+    /**
+     * 有効なセッションを返す（取得は single-flight: Mutex で直列化し、待機側は先に取れた結果を共有する）。
+     * [forceNew] のとき、[rejectedToken]（サーバーが `invalid_session` とした token）と違う有効な
+     * セッションが既にあれば、他の呼び出しが取り直し済みなのでそれを使う。
+     */
+    internal suspend fun ensureSession(forceNew: Boolean, rejectedToken: String? = null): String = sessionMutex.withLock {
         val cur = session
-        if (!forceNew && cur != null && nowMillis() / 1000 < cur.expiresAtSeconds - SESSION_REFRESH_MARGIN_SECONDS) {
-            return@withLock cur.token
+        if (cur != null && nowMillis() / 1000 < cur.expiresAtSeconds - SESSION_REFRESH_MARGIN_SECONDS) {
+            if (!forceNew || (rejectedToken != null && cur.token != rejectedToken)) return@withLock cur.token
         }
         session = null
         try {
@@ -213,26 +224,31 @@ class FeedpulseClient internal constructor(
         return jwt
     }
 
-    private fun invalidateSession() { session = null }
+    /** [token] がまだ現在のセッションのときだけ破棄する（他の呼び出しが取り直した新しいセッションを消さない）。 */
+    private suspend fun invalidateSession(token: String) = sessionMutex.withLock {
+        if (session?.token == token) session = null
+    }
 
     /** セッション付きの呼び出し。`invalid_session` なら取り直して 1 回だけやり直す。 */
     private suspend fun authed(method: String, pathAndQuery: String, body: String?): HttpResponse {
         var refreshed = false
         var forceNew = false
+        var rejected: String? = null
         while (true) {
-            val token = ensureSession(forceNew)
+            val token = ensureSession(forceNew, rejected)
             try {
                 return call(method, pathAndQuery, body, token)
             } catch (e: FeedpulseException) {
                 when (e.code) {
                     FeedpulseErrorCode.INVALID_SESSION -> {
-                        invalidateSession()
+                        invalidateSession(token)
                         if (refreshed) throw e
                         refreshed = true
                         forceNew = true
+                        rejected = token
                     }
                     FeedpulseErrorCode.APP_NOT_REGISTERED, FeedpulseErrorCode.ATTESTATION_FAILED -> {
-                        invalidateSession()
+                        invalidateSession(token)
                         throw e
                     }
                     else -> throw e
@@ -252,12 +268,34 @@ class FeedpulseClient internal constructor(
             headers["Authorization"] = "Bearer $token"
         }
         val res = try {
-            withContext(Dispatchers.IO) { transport.execute(HttpRequest(method, base + pathAndQuery, headers, body)) }
+            withContext(Dispatchers.IO) { executeCancellable(HttpRequest(method, base + pathAndQuery, headers, body)) }
         } catch (e: IOException) {
+            // キャンセルで接続を切られたときの IOException は、通信エラーでなくキャンセルとして扱う。
+            currentCoroutineContext().ensureActive()
             throw FeedpulseException(FeedpulseErrorCode.NETWORK, e.message ?: "通信に失敗", cause = e)
         }
         if (res.status in 200..299) return res
         throw toException(res)
+    }
+
+    /** ブロッキング通信を実行する。スコープがキャンセルされたら通信中の接続を切って即座に抜ける。 */
+    private suspend fun executeCancellable(request: HttpRequest): HttpResponse {
+        val t = transport as? CancellableHttpTransport ?: return transport.execute(request)
+        val handle = CancelHandle()
+        return coroutineScope {
+            val watcher = launch(start = CoroutineStart.UNDISPATCHED) {
+                try {
+                    awaitCancellation()
+                } finally {
+                    handle.cancel()
+                }
+            }
+            try {
+                t.execute(request, handle)
+            } finally {
+                watcher.cancel()
+            }
+        }
     }
 
     private fun toException(res: HttpResponse): FeedpulseException {

@@ -41,8 +41,8 @@ CI では `gpr.user` / `gpr.key` の代わりに環境変数や CI のシーク�
 
 ```kotlin
 dependencies {
-    implementation("com.feedpulse:feedpulse-picker:0.2.0")   // 本体（View 対応）
-    implementation("com.feedpulse:feedpulse-compose:0.2.0")  // Jetpack Compose を使う場合のみ追加
+    implementation("com.feedpulse:feedpulse-picker:0.2.1")   // 本体（View 対応）
+    implementation("com.feedpulse:feedpulse-compose:0.2.1")  // Jetpack Compose を使う場合のみ追加
 }
 ```
 
