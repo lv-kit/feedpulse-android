@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.1
+
+- コルーチンのキャンセルが通信中の `HttpURLConnection` に効かなかった問題を修正。キャンセル時に接続を切り、`CancellationException` として即座に抜ける。
+- 並行リクエストが同時に `invalid_session` を受けたとき、セッションを重複して取得していた問題を修正。取得は 1 回にまとめ、待機側は結果を共有する。
+- 公開 API の変更なし。
+
 ## 0.2.0
 
 - SDK 本体を追加: `Feedpulse.configure` / `refreshConfig` / `submit` / `identify`。
