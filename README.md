@@ -4,6 +4,8 @@ Feedpulse Android SDK。ヘッドレス（UI・スクリーンショット無し
 
 ## 導入
 
+> **利用には Feedpulse への登録が必要。** SDK を使う前に <https://feedpulse.stargazy.xyz/> でアカウントを登録し、プロジェクトを作成して公開鍵（`pk_`）を発行する。
+
 要件: minSdk 23 以上 / compileSdk 36 / JDK 17。成果物は GitHub Packages（`https://maven.pkg.github.com/lv-kit/feedpulse-android`）で配布している。Maven Central には未公開。
 
 ### 1. リポジトリと認証を追加する
