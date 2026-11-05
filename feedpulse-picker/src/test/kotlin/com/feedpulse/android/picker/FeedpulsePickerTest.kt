@@ -21,6 +21,8 @@ import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowLooper
+import android.widget.FrameLayout
+import com.facebook.react.views.debuggingoverlay.DebuggingOverlay
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -198,4 +200,18 @@ class FeedpulsePickerTest {
         )
     }
 
+
+    @Test fun react_native_debugging_overlay_is_skipped() {
+        lateinit var btn: View
+        val a = launch { act, col ->
+            val frame = FrameLayout(act)
+            btn = Button(act).apply { id = 0x7f0b0002; text = "Pay" }
+            frame.addView(btn, FrameLayout.LayoutParams(500, 100))
+            frame.addView(DebuggingOverlay(act), FrameLayout.LayoutParams(500, 100))
+            col.addView(frame, LinearLayout.LayoutParams(500, 100))
+        }
+        pick(a)
+        tapCenter(a, btn)
+        assertEquals("Pay", selected().label)
+    }
 }
