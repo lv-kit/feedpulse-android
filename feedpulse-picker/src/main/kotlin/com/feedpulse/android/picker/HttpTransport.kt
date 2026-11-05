@@ -38,6 +38,12 @@ internal class CancelHandle {
         if (cancelNow) c.disconnect()
     }
 
+    /** キャンセル済みなら [IOException]。接続前の `disconnect()` は効かないことがあるので、接続を張る前に確認する。 */
+    @Throws(IOException::class)
+    fun throwIfCancelled() {
+        if (synchronized(lock) { cancelled }) throw IOException("cancelled")
+    }
+
     fun cancel() {
         val c = synchronized(lock) {
             cancelled = true
@@ -64,15 +70,18 @@ internal class UrlConnectionTransport(
         val conn = URL(request.url).openConnection() as HttpURLConnection
         handle.attach(conn)
         try {
+            handle.throwIfCancelled()
             conn.requestMethod = request.method
             conn.connectTimeout = connectTimeoutMs
             conn.readTimeout = readTimeoutMs
             conn.instanceFollowRedirects = false
             request.headers.forEach { (k, v) -> conn.setRequestProperty(k, v) }
+            handle.throwIfCancelled()
             if (request.body != null) {
                 conn.doOutput = true
                 conn.outputStream.use { it.write(request.body.toByteArray(Charsets.UTF_8)) }
             }
+            handle.throwIfCancelled()
             val status = conn.responseCode
             val stream = if (status >= 400) conn.errorStream else conn.inputStream
             val text = stream?.use { it.readBytes().toString(Charsets.UTF_8) } ?: ""
