@@ -583,4 +583,17 @@ class FeedpulseClientTest {
             assertTrue(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - t0) < 5_000)
         }
     }
+
+    @Test
+    fun cancelledBeforeConnect_abortsWithoutSendingRequest() {
+        happyRoutes()
+        val handle = CancelHandle().apply { cancel() }
+        val req = HttpRequest("GET", server.url("/v1/config").toString(), emptyMap())
+        try {
+            UrlConnectionTransport().execute(req, handle)
+            fail("IOException が投げられなかった")
+        } catch (_: IOException) {
+        }
+        assertTrue(seen.isEmpty())
+    }
 }
