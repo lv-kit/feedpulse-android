@@ -53,11 +53,15 @@ internal object ViewTargetResolver {
         )
     }
 
+    /** 利用者の画面ではなく、開発ツールが全面に重ねる透明な View。選択対象にしない。 */
+    private val IGNORED_VIEW_CLASSES = setOf("com.facebook.react.views.debuggingoverlay.DebuggingOverlay")
+
     private fun hitChild(parent: View, x: Int, y: Int, exclude: View?): View? {
         if (parent !is ViewGroup) return null
         for (i in parent.childCount - 1 downTo 0) {
             val c = parent.getChildAt(i)
             if (c === exclude || c.visibility != View.VISIBLE || c.alpha <= 0f) continue
+            if (c.javaClass.name in IGNORED_VIEW_CLASSES) continue
             if (screenRect(c).contains(x, y)) return c
         }
         return null
