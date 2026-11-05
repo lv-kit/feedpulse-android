@@ -19,4 +19,3 @@
 -keep class com.feedpulse.android.picker.FieldErrorCode { *; }
 -keep class com.feedpulse.android.picker.AppAttestor { *; }
 -keep class com.feedpulse.android.picker.PlayIntegrityAttestor { *; }
--keep class com.feedpulse.android.picker.Feedpulse* { *; }

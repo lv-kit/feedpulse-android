@@ -113,9 +113,25 @@ class FeedpulseClient internal constructor(
         if (!IDEMPOTENCY_KEY.matches(key)) {
             throw FeedpulseException(FeedpulseErrorCode.INVALID_IDEMPOTENCY_KEY, "idempotencyKey は ^[A-Za-z0-9_-]{16,64}\$")
         }
-        val form = (_config.value?.formById(formId) ?: refreshConfig().formById(formId))
-            ?: throw FeedpulseException(FeedpulseErrorCode.UNKNOWN_FORM, "formId=$formId は config に無い")
-        val errors = FormValidator.validate(form, fields)
+        val sendFields = fields.filterValues { it != null && !(it is String && it.isBlank()) }
+        custom?.values?.forEach {
+            if (it !is String && it !is Boolean && !(it is Number && it.toDouble().isFinite())) {
+                throw FeedpulseException(FeedpulseErrorCode.NOT_CONFIGURED, "custom の値は String / 有限の Number / Boolean のみ")
+            }
+        }
+        var current = _config.value
+        var form = current?.formById(formId)
+        if (form == null) {
+            current = refreshConfig()
+            form = current.formById(formId)
+        }
+        if (form == null) throw FeedpulseException(FeedpulseErrorCode.UNKNOWN_FORM, "formId=$formId は config に無い")
+        var errors = FormValidator.validate(form, sendFields)
+        if (errors.isNotEmpty() && current?.isStale == true) {
+            // 古い保存値で弾かない。最新の定義を取り直して検証し直す（取れなければ古い定義のまま）。
+            form = refreshConfig().formById(formId) ?: form
+            errors = FormValidator.validate(form, sendFields)
+        }
         if (errors.isNotEmpty()) {
             throw FeedpulseException(FeedpulseErrorCode.INVALID_FIELDS, "入力が不正: $errors", fieldErrors = errors)
         }
@@ -131,7 +147,7 @@ class FeedpulseClient internal constructor(
             mapOf(
                 "formId" to formId,
                 "idempotencyKey" to key,
-                "fields" to fields.filterValues { it != null },
+                "fields" to sendFields,
                 "context" to context,
             ),
         )
@@ -149,7 +165,7 @@ class FeedpulseClient internal constructor(
                     _lastError.value = e
                     throw e
                 }
-                val wait = e.retryAfterSeconds?.let { it * 1000 } ?: (retryPolicy.baseDelayMs shl attempt)
+                val wait = e.retryAfterSeconds?.let { it.coerceAtMost(retryPolicy.maxDelayMs / 1000) * 1000 } ?: (retryPolicy.baseDelayMs shl attempt)
                 sleep(wait.coerceAtMost(retryPolicy.maxDelayMs))
                 attempt++
             }
@@ -164,6 +180,16 @@ class FeedpulseClient internal constructor(
             return@withLock cur.token
         }
         session = null
+        try {
+            openSession()
+        } catch (e: FeedpulseException) {
+            // challenge の期限切れ（端末が遅い等）は challenge を取り直して 1 回だけやり直す。
+            if (e.code != FeedpulseErrorCode.CHALLENGE_EXPIRED && e.code != FeedpulseErrorCode.INVALID_CHALLENGE) throw e
+            openSession()
+        }
+    }
+
+    private suspend fun openSession(): String {
         val ch = post("/v1/native/challenge", Json.encode(mapOf("pk" to publicKey)), null)
         val challenge = parseObject(ch.body).optString("challenge")
         if (challenge.isEmpty()) throw FeedpulseException(FeedpulseErrorCode.UNEXPECTED_RESPONSE, "challenge の応答が不正", ch.status)
@@ -184,7 +210,7 @@ class FeedpulseClient internal constructor(
             throw FeedpulseException(FeedpulseErrorCode.UNEXPECTED_RESPONSE, "session の応答が不正", res.status)
         }
         session = Session(jwt, json.getLong("expiresAt"))
-        jwt
+        return jwt
     }
 
     private fun invalidateSession() { session = null }

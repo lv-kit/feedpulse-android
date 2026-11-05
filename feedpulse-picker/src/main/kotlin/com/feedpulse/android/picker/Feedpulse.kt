@@ -64,6 +64,10 @@ object Feedpulse {
         attestor: AppAttestor = PlayIntegrityAttestor(context),
     ): FeedpulseClient {
         require(publicKey.isNotBlank()) { "publicKey が空" }
+        val host = java.net.URI(baseUrl).host
+        require(baseUrl.startsWith("https://") || host == "localhost" || host == "127.0.0.1" || host == "10.0.2.2") {
+            "baseUrl は https（開発用の localhost / 127.0.0.1 / 10.0.2.2 のみ http 可）"
+        }
         return FeedpulseClient(
             publicKey = publicKey,
             baseUrl = baseUrl,

@@ -137,14 +137,14 @@ class FeedpulseClientTest {
                 f.getJSONObject("response").optJSONObject("headers")?.optString("retry-after")?.takeIf { it.isNotEmpty() }
                     ?.let { assertEquals(name, it.toLong(), e.retryAfterSeconds) }
                 // アプリ証明の失敗などは再試行しない（session は 1 回だけ）。
-                assertEquals(name, 1, requests("/v1/native/session").size)
+                assertEquals(name, if (name == "session-challenge-expired") 2 else 1, requests("/v1/native/session").size)
             }
             // 要求本文が契約どおり（challenge は challenge-ok の値）。
-            val sent = json(requests("/v1/native/session").single().body.readUtf8())
+            val sent = json(requests("/v1/native/session").last().body.readUtf8())
             val want = JSONObject(reqBody.toString()).put("challenge", respBody("challenge-ok").getString("challenge"))
             assertEquals(name, want.toString(), sent.toString().let { JSONObject(it) }.toString().let { reorder(JSONObject(it), want).toString() })
-            assertEquals(name, "pk_example", requests("/v1/native/challenge").single().body.readUtf8().let { json(it).getString("pk") })
-            assertNull(name, requests("/v1/native/session").single().getHeader("Origin"))
+            assertEquals(name, "pk_example", requests("/v1/native/challenge").last().body.readUtf8().let { json(it).getString("pk") })
+            assertNull(name, requests("/v1/native/session").last().getHeader("Origin"))
         }
     }
 
@@ -402,7 +402,7 @@ class FeedpulseClientTest {
 
         // allowTarget=false のフォームでは載せない。
         seen.clear()
-        val cfg = respBody("config-ok")
+        val cfg = JSONObject(respBody("config-ok").toString())
         cfg.getJSONArray("forms").getJSONObject(0).getJSONObject("definition").put("allowTarget", false)
         route("/v1/config", MockResponse().setBody(cfg.toString()))
         runBlocking { client().submit(formId, mapOf("title" to "x", "severity" to "low"), target = target) }
@@ -431,6 +431,50 @@ class FeedpulseClientTest {
         assertEquals(502, e.httpStatus)
         assertEquals(4, requests("/v1/submit").size)
         assertNotNull(e.message)
+    }
+
+    @Test
+    fun challengeExpired_retriesSessionOnceWithNewChallenge() {
+        happyRoutes()
+        route("/v1/native/session", mock("session-challenge-expired"), mock("session-ok-play-integrity"))
+        runBlocking { client().refreshConfig() }
+        assertEquals(2, requests("/v1/native/challenge").size)
+        assertEquals(2, requests("/v1/native/session").size)
+    }
+
+    @Test
+    fun staleCachedDefinition_isRefreshedBeforeRejectingInput() {
+        happyRoutes()
+        val store = InMemoryConfigStore()
+        // 保存値は severity の選択肢が古い（"high" が無い）。
+        val old = JSONObject(respBody("config-ok").toString())
+        old.getJSONArray("forms").getJSONObject(0).getJSONObject("definition").getJSONArray("blocks")
+            .getJSONObject(2).put("options", JSONArray().put(JSONObject().put("value", "low").put("label", "低")))
+        route("/v1/config", MockResponse().setBody(old.toString()))
+        runBlocking { client(store = store).refreshConfig() }
+        route("/v1/config", mock("config-ok"))
+        val c = client(store = store)
+        assertTrue(c.config.value!!.isStale)
+        runBlocking { c.submit(formId, mapOf("title" to "x", "severity" to "high")) }
+        assertEquals(1, requests("/v1/submit").size)
+    }
+
+    @Test
+    fun blankOptionalFieldsAreNotSent() {
+        happyRoutes()
+        runBlocking { client().submit(formId, mapOf("title" to "x", "severity" to "low", "body" to "  ")) }
+        assertFalse(json(requests("/v1/submit").single().body.readUtf8()).getJSONObject("fields").has("body"))
+    }
+
+    @Test
+    fun configure_rejectsPlainHttp() {
+        val ctx = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+        try {
+            Feedpulse.configure(ctx, "pk_x", "http://example.com", AppAttestor { "t" })
+            fail("http は拒否される")
+        } catch (_: IllegalArgumentException) {
+        }
+        Feedpulse.configure(ctx, "pk_x", "http://localhost:8787", AppAttestor { "t" })
     }
 
     // ---------- バリデーション ----------
