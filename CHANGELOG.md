@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.1
 
 - React Native の開発用オーバーレイ（`DebuggingOverlay`）を選択対象から外す。
 

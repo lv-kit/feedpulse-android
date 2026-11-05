@@ -22,7 +22,7 @@ android {
 kotlin { jvmToolchain(17) }
 
 group = "com.feedpulse"
-version = "0.1.0"
+version = "0.1.1"
 
 afterEvaluate {
     publishing {
