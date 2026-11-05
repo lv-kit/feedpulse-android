@@ -22,7 +22,7 @@ android {
 kotlin { jvmToolchain(17) }
 
 group = "com.feedpulse"
-version = "0.1.1"
+version = "0.2.0"
 
 afterEvaluate {
     publishing {
@@ -42,7 +42,7 @@ afterEvaluate {
                 artifactId = "feedpulse-picker"
                 pom {
                     name.set("feedpulse-picker")
-                    description.set("Feedpulse Android SDK: 該当箇所ピッカー")
+                    description.set("Feedpulse Android SDK: 該当箇所ピッカー・設定取得・送信")
                     url.set("https://github.com/lv-kit/feedpulse-android")
                     licenses {
                         license {
@@ -57,7 +57,10 @@ afterEvaluate {
 }
 
 dependencies {
+    api("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
+    implementation("com.google.android.play:integrity:1.5.0")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.robolectric:robolectric:4.16")
     testImplementation("androidx.test:core:1.7.0")
+    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
 }

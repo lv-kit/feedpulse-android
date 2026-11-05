@@ -1,6 +1,6 @@
 # feedpulse-android
 
-Feedpulse Android SDK。ヘッドレス（UI・スクリーンショット無し）。
+Feedpulse Android SDK。ヘッドレス（UI・スクリーンショット無し）。該当箇所ピッカー、項目定義の取得、入力検証、送信（アプリ証明つき）、身元確認トークンの受け渡しを提供する。
 
 ## 導入
 
@@ -41,12 +41,74 @@ CI では `gpr.user` / `gpr.key` の代わりに環境変数や CI のシーク�
 
 ```kotlin
 dependencies {
-    implementation("com.feedpulse:feedpulse-picker:0.1.1")   // 本体（View 対応）
-    implementation("com.feedpulse:feedpulse-compose:0.1.1")  // Jetpack Compose を使う場合のみ追加
+    implementation("com.feedpulse:feedpulse-picker:0.2.0")   // 本体（View 対応）
+    implementation("com.feedpulse:feedpulse-compose:0.2.0")  // Jetpack Compose を使う場合のみ追加
 }
 ```
 
 `feedpulse-compose` は追加するだけで有効になる（初期化コードは不要）。R8 / ProGuard のルールは consumer ルールとして同梱している。Gradle を同期すれば `import com.feedpulse.android.picker.Feedpulse` で使える。
+
+### 依存関係（`feedpulse-picker` が持ち込むもの）
+
+- `com.google.android.play:integrity`（Play Integrity API。アプリ証明）
+- `org.jetbrains.kotlinx:kotlinx-coroutines-core`（`StateFlow` / `suspend` を公開 API に使うため `api`）
+- HTTP は `HttpURLConnection`（追加ライブラリなし）。`INTERNET` 権限を manifest マージで追加する。
+
+## 使い方
+
+```kotlin
+// 1. Application.onCreate など。公開鍵は Feedpulse で発行した pk_...
+Feedpulse.configure(applicationContext, publicKey = "pk_...")
+
+// 2. 項目定義を取得（失敗時は前回の保存値。isStale = true）
+val config = Feedpulse.refreshConfig()
+val form = config.form("bug")!!
+
+// 3. ログイン済みユーザーの身元を渡す（任意）。顧客バックエンドが sk_ で署名した JWT をそのまま渡す
+Feedpulse.identify(jwtFromYourBackend) // null で解除
+
+// 4. 送信
+try {
+    val receipt = Feedpulse.submit(
+        formId = form.id,
+        fields = mapOf("title" to "ログインできない", "severity" to "high"),
+        target = pickedTarget,                    // pickTarget の結果（任意）
+        custom = mapOf("plan" to "pro"),          // context.custom（任意）
+    )
+} catch (e: FeedpulseException) {
+    when (e.code) {
+        FeedpulseErrorCode.INVALID_FIELDS -> showErrors(e.fieldErrors) // ブロック ID → required / too_long / ...
+        FeedpulseErrorCode.RATE_LIMITED -> Unit // 自動再送を使い切った後。e.retryAfterSeconds
+        else -> Unit
+    }
+}
+```
+
+Jetpack Compose からは `Feedpulse.client.config`（`StateFlow<FeedpulseConfig?>`）と `Feedpulse.client.lastError`（`StateFlow<FeedpulseException?>`）を `collectAsState()` で購読できる。
+
+### 公開 API
+
+- `Feedpulse.configure(context, publicKey, baseUrl = DEFAULT_BASE_URL, attestor = PlayIntegrityAttestor(context))` → `FeedpulseClient`
+- `Feedpulse.client` / `identify(token)` / `suspend refreshConfig()` / `suspend submit(...)`（`client` への委譲）
+- `FeedpulseClient`: `config` / `lastError`（StateFlow）、`identify`、`refreshConfig`、`submit`
+- `FormValidator.validate(form, fields)`: 送信前の入力検証（`submit` も内部で呼ぶ）
+- `FeedpulseException(code: FeedpulseErrorCode, httpStatus, fieldErrors, identityCode, retryAfterSeconds)`。`code` は契約のエラーコード（`invalid_session`、`rate_limited`、`identity_invalid` など）と、SDK 側の `NETWORK` / `ATTESTATION_UNAVAILABLE` / `NOT_CONFIGURED` / `UNEXPECTED_RESPONSE`
+- `AppAttestor`: アプリ証明の差し替え口（テスト用など）
+
+### 挙動
+
+- **セッション**: `POST /v1/native/challenge` → Play Integrity（classic request、nonce = challenge）→ `POST /v1/native/session`。セッションは 900 秒。期限の 60 秒前に取り直し、`invalid_session` を受けたら 1 回だけ取り直してやり直す。アプリ証明の失敗（`attestation_failed`）は再試行しない。`Origin` は付けず `X-FeedPulse-Platform: android` と Bearer を送る。
+- **config**: `GET /v1/config`。成功したらローカル（SharedPreferences）に保存。通信失敗時は前回値を返す（前回値も無ければ例外）。
+- **検証**: 項目定義（必須・文字数・選択肢・メール形式・数値の範囲）で送信前に検証し、不正なら送らず `INVALID_FIELDS`。`image` / `file` ブロックは 0.2.0 では未対応（検証も送信もしない）。
+- **送信**: 冪等キー（SDK が生成、`idempotencyKey` 引数で指定も可）を付け、通信失敗・429・5xx は同じキーで最大 3 回再送（1 秒・2 秒・4 秒。429 の `Retry-After` を優先、上限 120 秒）。`context.auto` に `os` / `locale` / `timezone` を載せ、フォームが `allowTarget` のときだけ `target` を `context.auto.target` に載せる。`identify` したトークンは `context.identity`。
+- API のベース URL の既定は本番（`https://ingest.feedpulse.stargazy.xyz`）。ローカル開発では `baseUrl` を指定する。
+
+### 検証状況と制約
+
+- 単体テストは契約 fixture（`feedpulse-picker/src/test/resources/contract.json`、web の `packages/shared/src/native/fixtures/contract.json` の写し）をモックサーバー（MockWebServer）で再生して検証している。
+- **Play Integrity と実機での送信は未検証**（Play ストアのある実機と、Feedpulse 側のアプリ登録・Play Integrity の設定が要る）。テストでは `AppAttestor` を差し替えている。
+- Play Integrity は classic request のみ対応（サーバーが復号した nonce と challenge を照合するため）。`dev_insecure` は送らない。
+- Feedpulse 側で、プロジェクトに Android アプリ（package name と署名証明書の SHA-256）の登録が必要。
 
 ## 該当箇所ピッカー（#115）
 
@@ -55,7 +117,7 @@ dependencies {
 ```kotlin
 val handle = Feedpulse.pickTarget(activity, PickerOptions(labelMaxChars = 40, screenName = "Checkout")) { result ->
     when (result) {
-        is PickResult.Selected -> submit(contextAutoTarget = result.target.toMap()) // または toJson()
+        is PickResult.Selected -> Feedpulse.submit(formId, fields, target = result.target)
         PickResult.Cancelled -> Unit
         is PickResult.Unavailable -> Unit // FLAG_SECURE の画面など
     }
