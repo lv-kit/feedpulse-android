@@ -43,6 +43,60 @@ interface PickerHandle {
  * 画面上の該当箇所を選んで [FeedpulseTarget] を返す。UI・スクリーンショットは扱わない（ヘッドレス）。
  */
 object Feedpulse {
+    /** 既定の API ベース URL（本番の ingest）。 */
+    const val DEFAULT_BASE_URL = "https://ingest.feedpulse.stargazy.xyz"
+
+    @Volatile private var configured: FeedpulseClient? = null
+
+    /**
+     * SDK を初期化する。アプリ起動時（`Application.onCreate` など）に 1 回呼ぶ。再度呼ぶと置き換わる。
+     * 通信は最初の [refreshConfig] / [submit] で始まる。
+     *
+     * @param publicKey 公開鍵（`pk_...`）。
+     * @param baseUrl API のベース URL。
+     * @param attestor アプリ証明の取得方法。既定は Play Integrity。
+     */
+    @JvmOverloads
+    fun configure(
+        context: Context,
+        publicKey: String,
+        baseUrl: String = DEFAULT_BASE_URL,
+        attestor: AppAttestor = PlayIntegrityAttestor(context),
+    ): FeedpulseClient {
+        require(publicKey.isNotBlank()) { "publicKey が空" }
+        val host = java.net.URI(baseUrl).host
+        require(baseUrl.startsWith("https://") || host == "localhost" || host == "127.0.0.1" || host == "10.0.2.2") {
+            "baseUrl は https（開発用の localhost / 127.0.0.1 / 10.0.2.2 のみ http 可）"
+        }
+        return FeedpulseClient(
+            publicKey = publicKey,
+            baseUrl = baseUrl,
+            appId = context.applicationContext.packageName,
+            attestor = attestor,
+            transport = UrlConnectionTransport(),
+            store = PrefsConfigStore(context),
+        ).also { configured = it }
+    }
+
+    /** [configure] で作ったクライアント。未設定なら `NOT_CONFIGURED` を投げる。 */
+    val client: FeedpulseClient
+        get() = configured ?: throw FeedpulseException(FeedpulseErrorCode.NOT_CONFIGURED, "Feedpulse.configure を先に呼ぶ")
+
+    /** [FeedpulseClient.identify] */
+    fun identify(token: String?) = client.identify(token)
+
+    /** [FeedpulseClient.refreshConfig] */
+    suspend fun refreshConfig(): FeedpulseConfig = client.refreshConfig()
+
+    /** [FeedpulseClient.submit] */
+    suspend fun submit(
+        formId: String,
+        fields: Map<String, Any?>,
+        target: FeedpulseTarget? = null,
+        custom: Map<String, Any>? = null,
+        idempotencyKey: String? = null,
+    ): SubmitReceipt = client.submit(formId, fields, target, custom, idempotencyKey)
+
     private val active = WeakHashMap<Activity, Session>()
     private val extraResolvers = ArrayList<ViewHitResolver>()
     private var composeLoaded = false

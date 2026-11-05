@@ -58,6 +58,16 @@ internal object Json {
                 }
                 sb.append('}')
             }
+            is Iterable<*> -> {
+                sb.append('[')
+                var first = true
+                for (item in v) {
+                    if (!first) sb.append(',')
+                    first = false
+                    write(sb, item)
+                }
+                sb.append(']')
+            }
             else -> quote(sb, v.toString())
         }
     }
