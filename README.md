@@ -2,6 +2,50 @@
 
 Feedpulse Android SDK。ヘッドレス（UI・スクリーンショット無し）。
 
+## 導入
+
+要件: minSdk 23 以上 / compileSdk 36 / JDK 17。成果物は GitHub Packages（`https://maven.pkg.github.com/lv-kit/feedpulse-android`）で配布している。Maven Central には未公開。
+
+### 1. リポジトリと認証を追加する
+
+GitHub Packages は読み取りにも認証が要る。`read:packages` 権限の Personal Access Token を作り、`~/.gradle/gradle.properties` に書く（リポジトリにはコミットしない）。
+
+```properties
+gpr.user=<GitHub のユーザー名>
+gpr.key=<read:packages 権限のトークン>
+```
+
+`settings.gradle.kts`（または `build.gradle.kts` の `allprojects`）に追加する。
+
+```kotlin
+dependencyResolutionManagement {
+    repositories {
+        google()
+        mavenCentral()
+        maven {
+            url = uri("https://maven.pkg.github.com/lv-kit/feedpulse-android")
+            credentials {
+                username = providers.gradleProperty("gpr.user").orNull
+                password = providers.gradleProperty("gpr.key").orNull
+            }
+        }
+    }
+}
+```
+
+CI では `gpr.user` / `gpr.key` の代わりに環境変数や CI のシークレットから渡す。
+
+### 2. 依存を追加する
+
+```kotlin
+dependencies {
+    implementation("com.feedpulse:feedpulse-picker:0.1.1")   // 本体（View 対応）
+    implementation("com.feedpulse:feedpulse-compose:0.1.1")  // Jetpack Compose を使う場合のみ追加
+}
+```
+
+`feedpulse-compose` は追加するだけで有効になる（初期化コードは不要）。R8 / ProGuard のルールは consumer ルールとして同梱している。Gradle を同期すれば `import com.feedpulse.android.picker.Feedpulse` で使える。
+
 ## 該当箇所ピッカー（#115）
 
 画面上の要素を 1 タップで選び、投稿の `context.auto.target` に載せる値を返す。
