@@ -5,6 +5,29 @@ FeedPulse（Cloudflare Workers 上のフィードバック収集・配信 SaaS�
 
 定義されていないコマンドを推測で書かない。
 
+## 構成
+
+- Gradle マルチモジュール（`settings.gradle.kts`）。`feedpulse-picker`（設定取得・送信・該当箇所ピッカー）と `feedpulse-compose`（Compose 連携）
+- Kotlin 2.2 / AGP 8.13 / JDK 17 / compileSdk 36 / minSdk 23（ルートと各モジュールの `build.gradle.kts`）
+- テストは各モジュールの `src/test/`。契約 fixture は `feedpulse-picker/src/test/resources/contract.json`
+
+## 検証
+
+CI（`.github/workflows/ci.yml`）と同じ形で実行する。JDK 17 と Android SDK が要る（`local.properties` の `sdk.dir` は Git 管理外）。
+
+- `./gradlew build publishToMavenLocal`: CI の検証
+- `JAVA_HOME=$(/usr/libexec/java_home -v 17) ./gradlew test`: 単体テストのみ
+
+## API 契約
+
+- 正本は `lv-kit/feedpulse-web` の `packages/shared/src/native/fixtures/contract.json`。`contract.json` はその写しで、手で編集しない
+- 契約が変わったら、正本で置き換える。`TargetSchema.kt`（web の `sanitizeTarget` の写し）も追随させる。テストは fixture を MockWebServer で再生して検証する
+- 他の SDK（ios / rn / flutter）と契約・挙動を揃える。仕様の追加・変更は正本側で決める
+
+## リリース
+
+手順は `RELEASING.md`。バージョンは各モジュールの `build.gradle.kts` の `version` と `CHANGELOG.md`。`vX.Y.Z` タグの push で `release.yml` が GitHub Packages へ公開する。タグ付けと公開はメンテナだけが行い、エージェントはタグを打たない。
+
 ## 言語ルール
 
 - **Issue・PR（タイトル・本文・コメント・レビュー返信）・コミットメッセージ**: 日本語
