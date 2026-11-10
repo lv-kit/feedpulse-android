@@ -107,6 +107,9 @@ internal object ViewTargetResolver {
         }
     }
 
+    /** `scheme://user:password@host` の userinfo（認証情報）。authority 内（`/` `\` まで）の最後の `@` までを除く。 */
+    private val USERINFO = Regex("^([A-Za-z][A-Za-z0-9+.-]*://)[^/\\\\]*@")
+
     private fun segmentOf(v: View): String {
         val cls = v.javaClass.simpleName.ifEmpty { v.javaClass.name.substringAfterLast('.') }
         val res = if (v.id != View.NO_ID) {
@@ -114,8 +117,10 @@ internal object ViewTargetResolver {
         } else null
         val base = if (res != null) "$cls#$res" else cls
         if (v is WebView) {
-            // WebView 内の要素は取れない。WebView 全体として URL（クエリ・フラグメント無し）だけ残す。
-            val url = runCatching { v.url }.getOrNull()?.substringBefore('#')?.substringBefore('?')
+            // WebView 内の要素は取れない。WebView 全体として URL（クエリ・フラグメント・userinfo 無し）だけ残す。
+            val url = runCatching { v.url }.getOrNull()
+                ?.substringBefore('#')?.substringBefore('?')
+                ?.replace(USERINFO, "$1")
             if (!url.isNullOrEmpty()) return "$base[$url]"
         }
         return base

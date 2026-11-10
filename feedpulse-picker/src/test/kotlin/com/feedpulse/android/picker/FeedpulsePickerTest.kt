@@ -66,6 +66,31 @@ class FeedpulsePickerTest {
     private fun assertValid(t: FeedpulseTarget) =
         assertEquals(emptyList<String>(), TargetSchema.violations(t.toMap()))
 
+    private fun webViewPath(url: String): String? {
+        val act = Robolectric.buildActivity(Activity::class.java).create().get()
+        val web = android.webkit.WebView(act).apply { loadUrl(url) }
+        // WebView は内側を辿らないので、root に渡せばヒットテスト（layout）に依存せず解決できる。
+        return ViewTargetResolver.resolve(web, 0, 0, null, emptyList(), "s", 80)!!.path
+    }
+
+    @Test fun webview_path_keeps_plain_url_without_userinfo() {
+        assertEquals("WebView[https://example.com/p]", webViewPath("https://example.com/p"))
+    }
+
+    @Test fun webview_path_drops_userinfo() {
+        val p = webViewPath("https://user:password@example.com/p")!!
+        assertEquals("WebView[https://example.com/p]", p)
+    }
+
+    @Test fun webview_path_drops_username_only_userinfo() {
+        assertEquals("WebView[https://example.com/]", webViewPath("https://token@example.com/"))
+    }
+
+    @Test fun webview_path_drops_userinfo_query_and_fragment_together() {
+        val p = webViewPath("https://user:password@example.com:8443/a?k=v#frag")!!
+        assertEquals("WebView[https://example.com:8443/a]", p)
+    }
+
     @Test fun view_auto_capture_uses_class_resource_name_text_and_rect() {
         lateinit var btn: View
         val a = launch { act, col ->
