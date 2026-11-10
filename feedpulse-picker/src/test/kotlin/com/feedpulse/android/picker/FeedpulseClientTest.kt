@@ -563,6 +563,47 @@ class FeedpulseClientTest {
     }
 
     @Test
+    fun refreshConfig_staleResponseDoesNotOverwriteNewerConfig() {
+        val configCalls = AtomicInteger()
+        val oldReleased = CountDownLatch(1)
+        val oldStarted = CountDownLatch(1)
+        fun body(version: Int) = JSONObject(respBody("config-ok").toString()).also {
+            it.getJSONArray("forms").getJSONObject(0).put("version", version)
+        }.toString()
+        val transport = HttpTransport { req ->
+            val path = req.url.substringAfter("//").substringAfter('/').let { "/" + it.substringBefore('?') }
+            when (path) {
+                "/v1/native/challenge" -> HttpResponse(200, emptyMap(), respBody("challenge-ok").toString())
+                "/v1/native/session" -> HttpResponse(200, emptyMap(), JSONObject().put("session", "s1").put("expiresAt", now / 1000 + 900).toString())
+                "/v1/config" ->
+                    if (configCalls.incrementAndGet() == 1) {
+                        // 1 本目（フォーム変更前の要求）: 2 本目が終わるまで応答を保留する。
+                        oldStarted.countDown()
+                        oldReleased.await(5, TimeUnit.SECONDS)
+                        HttpResponse(200, emptyMap(), body(3))
+                    } else {
+                        HttpResponse(200, emptyMap(), body(4))
+                    }
+                else -> HttpResponse(404, emptyMap(), "{}")
+            }
+        }
+        val store = InMemoryConfigStore()
+        val c = client(transport = transport, store = store)
+        runBlocking {
+            val old = async(Dispatchers.Default) { c.refreshConfig() }
+            assertTrue(oldStarted.await(5, TimeUnit.SECONDS))
+            val newer = c.refreshConfig()
+            assertEquals(4, newer.forms.single().version)
+            oldReleased.countDown()
+            val oldResult = old.await()
+            assertEquals("古い応答は破棄され新しい定義が返る", 4, oldResult.forms.single().version)
+            assertFalse(oldResult.isStale)
+        }
+        assertEquals(4, c.config.value!!.forms.single().version)
+        assertEquals("保存値も新しい定義のまま", 4, ConfigCodec.decodeCache(store.load("${server.url("/").toString().trimEnd('/')}|pk_example")!!)!!.forms.single().version)
+    }
+
+    @Test
     fun cancellingScope_disconnectsInFlightRequest() {
         happyRoutes()
         route("/v1/native/challenge", MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
