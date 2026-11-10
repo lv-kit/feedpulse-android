@@ -60,6 +60,11 @@ class FeedpulseClient internal constructor(
     private val _config = MutableStateFlow<FeedpulseConfig?>(store.load(cacheKey)?.let(ConfigCodec::decodeCache))
     private val _lastError = MutableStateFlow<FeedpulseException?>(null)
 
+    // refreshConfig の世代管理。要求の開始順に番号を振り、より新しい要求の結果が反映済みなら古い応答は捨てる。
+    private val configLock = Any()
+    private var configRequestSeq = 0L
+    private var configAppliedSeq = 0L
+
     /** 直近の config。保存値から復元したものや通信失敗後の前回値は `isStale = true`。未取得なら null。 */
     val config: StateFlow<FeedpulseConfig?> get() = _config
 
@@ -76,22 +81,37 @@ class FeedpulseClient internal constructor(
 
     /** `GET /v1/config` を取りに行く。通信に失敗したら前回値（`isStale = true`）を返し、前回値も無ければ例外。 */
     suspend fun refreshConfig(): FeedpulseConfig {
+        val seq = synchronized(configLock) { ++configRequestSeq }
         try {
             val res = authed("GET", "/v1/config?pk=" + java.net.URLEncoder.encode(publicKey, "UTF-8"), null)
             val json = parseObject(res.body)
             val fresh = FeedpulseConfig(ConfigCodec.parseForms(json), nowMillis())
-            store.save(cacheKey, ConfigCodec.encodeForms(fresh.forms, fresh.fetchedAtMillis))
-            _config.value = fresh
-            _lastError.value = null
-            return fresh
+            return synchronized(configLock) {
+                if (seq < configAppliedSeq) {
+                    // より新しい要求の結果が反映済み。古い応答で上書きしない。
+                    _config.value ?: fresh
+                } else {
+                    configAppliedSeq = seq
+                    store.save(cacheKey, ConfigCodec.encodeForms(fresh.forms, fresh.fetchedAtMillis))
+                    _config.value = fresh
+                    _lastError.value = null
+                    fresh
+                }
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             val err = e as? FeedpulseException
                 ?: FeedpulseException(FeedpulseErrorCode.UNEXPECTED_RESPONSE, "config を解釈できない: ${e.message}", cause = e)
-            _lastError.value = err
-            val cached = _config.value
-            if (cached != null) return cached.copy(isStale = true).also { _config.value = it }
+            val cached = synchronized(configLock) {
+                if (seq < configAppliedSeq) {
+                    // 古い要求の失敗は、反映済みの新しい config と lastError を変えない。
+                    _config.value?.let { return@synchronized it }
+                }
+                _lastError.value = err
+                _config.value?.copy(isStale = true)?.also { _config.value = it }
+            }
+            if (cached != null) return cached
             throw err
         }
     }
