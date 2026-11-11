@@ -79,5 +79,6 @@ class FeedpulseException(
         get() = code == FeedpulseErrorCode.NETWORK ||
             code == FeedpulseErrorCode.RATE_LIMITED ||
             code == FeedpulseErrorCode.INTERNAL ||
+            (httpStatus == 429 && code != FeedpulseErrorCode.QUOTA_EXCEEDED) ||
             (httpStatus != null && httpStatus >= 500)
 }

@@ -280,6 +280,17 @@ class FeedpulseClientTest {
     }
 
     @Test
+    fun nonJsonRateLimitIsRetriedWithRetryAfter() {
+        happyRoutes()
+        route("/v1/submit", MockResponse().setResponseCode(429).setHeader("Retry-After", "2").setBody("<html>busy</html>"))
+        val e = fail { client().submit(formId, mapOf("title" to "x", "severity" to "high")) }
+        assertEquals(FeedpulseErrorCode.UNEXPECTED_RESPONSE, e.code)
+        assertEquals(2L, e.retryAfterSeconds)
+        assertEquals(listOf(2_000L, 2_000L, 2_000L), sleeps)
+        assertEquals(4, requests("/v1/submit").size)
+    }
+
+    @Test
     fun submitFixtures_errors() {
         val cases = listOf(
             "submit-invalid-fields", "submit-identity-invalid", "submit-session-expired",

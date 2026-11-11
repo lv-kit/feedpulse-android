@@ -209,6 +209,35 @@ class FeedpulsePickerTest {
         assertEquals("shown", selected().label)
     }
 
+    @Test fun elevation_and_translation_z_override_child_order() {
+        lateinit var front: View
+        val a = launch { act, col ->
+            val stack = FrameLayout(act)
+            front = View(act).apply { feedpulseId("front"); elevation = 4f; translationZ = 2f }
+            stack.addView(front, FrameLayout.LayoutParams(300, 80))
+            stack.addView(View(act).apply { feedpulseId("back"); elevation = 5f }, FrameLayout.LayoutParams(300, 80))
+            col.add(stack, 100)
+        }
+        pick(a); tapCenter(a, front)
+        assertEquals("front", selected().id)
+    }
+
+    @Test fun disabled_custom_drawing_order_uses_child_order() {
+        lateinit var front: View
+        val a = launch { act, col ->
+            val stack = object : FrameLayout(act) {
+                init { setChildrenDrawingOrderEnabled(false) }
+                override fun getChildDrawingOrder(childCount: Int, drawingPosition: Int) = childCount - 1 - drawingPosition
+            }
+            stack.addView(View(act).apply { feedpulseId("back") }, FrameLayout.LayoutParams(300, 80))
+            front = View(act).apply { feedpulseId("front") }
+            stack.addView(front, FrameLayout.LayoutParams(300, 80))
+            col.add(stack, 100)
+        }
+        pick(a); tapCenter(a, front)
+        assertEquals("front", selected().id)
+    }
+
     @Test fun long_values_are_clamped_to_schema_limits() {
         lateinit var v: View
         val a = launch { act, col -> v = col.add(Button(act).apply { text = "x".repeat(500); feedpulseId("i".repeat(500)) }) }
