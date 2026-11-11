@@ -58,8 +58,8 @@ internal object ViewTargetResolver {
 
     private fun hitChild(parent: View, x: Int, y: Int, exclude: View?): View? {
         if (parent !is ViewGroup) return null
-        for (i in parent.childCount - 1 downTo 0) {
-            val c = parent.getChildAt(i)
+        // Z の高い View が前面。同じ Z なら追加順が後の View を優先する。
+        for (c in (0 until parent.childCount).map { parent.getChildAt(it) }.asReversed().sortedByDescending { it.z }) {
             if (c === exclude || c.visibility != View.VISIBLE || c.alpha <= 0f) continue
             if (c.javaClass.name in IGNORED_VIEW_CLASSES) continue
             if (screenRect(c).contains(x, y)) return c
