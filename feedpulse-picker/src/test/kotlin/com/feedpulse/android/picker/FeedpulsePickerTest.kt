@@ -238,6 +238,66 @@ class FeedpulsePickerTest {
         assertEquals("front", selected().id)
     }
 
+    @Test fun custom_drawing_order_is_used_by_picker_for_nested_group() {
+        lateinit var stack: FrameLayout
+        lateinit var first: View
+        val a = launch { act, col ->
+            stack = FrameLayout(act)
+            first = View(act).apply { feedpulseId("custom-front") }
+            stack.addView(first, FrameLayout.LayoutParams(300, 80))
+            stack.addView(View(act).apply { feedpulseId("default-front") }, FrameLayout.LayoutParams(300, 80))
+            col.add(stack, 100)
+        }
+        Feedpulse.pickTarget(a, PickerOptions(), ChildDrawingOrderResolver { parent ->
+            if (parent === stack) listOf(parent.getChildAt(0), parent.getChildAt(1)) else null
+        }) { results.add(it) }
+        tapCenter(a, first)
+        assertEquals("custom-front", selected().id)
+    }
+
+    @Test fun custom_order_does_not_override_z_and_falls_back_for_invalid_or_throwing_resolvers() {
+        lateinit var stack: FrameLayout
+        lateinit var first: View
+        lateinit var second: View
+        val a = launch { act, col ->
+            stack = FrameLayout(act)
+            first = View(act).apply { feedpulseId("first") }
+            second = View(act).apply { feedpulseId("second"); elevation = 1f }
+            stack.addView(first, FrameLayout.LayoutParams(300, 80))
+            stack.addView(second, FrameLayout.LayoutParams(300, 80))
+            col.add(stack, 100)
+        }
+        val resolvers = listOf(
+            ChildDrawingOrderResolver { if (it === stack) listOf(first, second) else null },
+            ChildDrawingOrderResolver { if (it === stack) listOf(first, first) else null },
+            ChildDrawingOrderResolver { if (it === stack) listOf(first) else null },
+            ChildDrawingOrderResolver { if (it === stack) throw IllegalStateException() else null },
+        )
+        for (resolver in resolvers) {
+            Feedpulse.pickTarget(a, PickerOptions(), resolver) { results.add(it) }
+            tapCenter(a, first)
+            assertEquals("second", selected().id)
+            results.clear()
+        }
+        second.elevation = 0f
+        @Suppress("UNCHECKED_CAST")
+        val nullChild = listOf(null, second) as List<View>
+        val outsider = View(a)
+        for (invalid in listOf(listOf(first, first), listOf(first), listOf(first, outsider), nullChild)) {
+            Feedpulse.pickTarget(a, PickerOptions(), ChildDrawingOrderResolver {
+                if (it === stack) invalid else null
+            }) { results.add(it) }
+            tapCenter(a, first)
+            assertEquals("second", selected().id)
+            results.clear()
+        }
+        Feedpulse.pickTarget(a, PickerOptions(), ChildDrawingOrderResolver {
+            if (it === stack) throw IllegalArgumentException() else null
+        }) { results.add(it) }
+        tapCenter(a, first)
+        assertEquals("second", selected().id)
+    }
+
     @Test fun long_values_are_clamped_to_schema_limits() {
         lateinit var v: View
         val a = launch { act, col -> v = col.add(Button(act).apply { text = "x".repeat(500); feedpulseId("i".repeat(500)) }) }

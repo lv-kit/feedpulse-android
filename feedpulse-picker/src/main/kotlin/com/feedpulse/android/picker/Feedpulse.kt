@@ -22,6 +22,15 @@ data class PickerOptions(
     val screenName: String? = null,
 )
 
+/** ViewGroup の直接の子を前面から背面の順で返す。タップ時にメインスレッドで呼ばれる。 */
+fun interface ChildDrawingOrderResolver {
+    /**
+     * 全ての直接の子を一度ずつ返す。対象外なら null。
+     * 不正なリストまたは例外は既定の逆追加順に戻る。Z 値が異なる場合は Z の高い子が優先される。
+     */
+    fun frontToBack(parent: ViewGroup): List<View>?
+}
+
 /** ピッカーの結果。コールバックは必ずメインスレッドで 1 回だけ呼ばれる。 */
 sealed class PickResult {
     data class Selected(val target: FeedpulseTarget) : PickResult()
@@ -130,6 +139,21 @@ object Feedpulse {
         activity: Activity,
         options: PickerOptions = PickerOptions(),
         callback: (PickResult) -> Unit,
+    ): PickerHandle = startPicker(activity, options, null, callback)
+
+    /** 独自の子描画順を持つ ViewGroup の順序を指定してピッカーを開始する。 */
+    fun pickTarget(
+        activity: Activity,
+        options: PickerOptions,
+        drawingOrderResolver: ChildDrawingOrderResolver,
+        callback: (PickResult) -> Unit,
+    ): PickerHandle = startPicker(activity, options, drawingOrderResolver, callback)
+
+    private fun startPicker(
+        activity: Activity,
+        options: PickerOptions,
+        drawingOrderResolver: ChildDrawingOrderResolver?,
+        callback: (PickResult) -> Unit,
     ): PickerHandle {
         check(Looper.myLooper() === Looper.getMainLooper()) { "Feedpulse.pickTarget はメインスレッドから呼ぶ" }
         active[activity]?.finish(PickResult.Cancelled)
@@ -142,7 +166,7 @@ object Feedpulse {
             callback(PickResult.Unavailable(PickResult.Reason.SECURE_WINDOW))
             return Session.NONE
         }
-        val session = Session(activity, options, resolvers(), callback)
+        val session = Session(activity, options, resolvers(), drawingOrderResolver, callback)
         active[activity] = session
         session.start()
         return session
@@ -152,6 +176,7 @@ object Feedpulse {
         private val activity: Activity,
         private val options: PickerOptions,
         private val resolvers: List<ViewHitResolver>,
+        private val drawingOrderResolver: ChildDrawingOrderResolver?,
         private val callback: (PickResult) -> Unit,
     ) : PickerHandle {
         private var overlay: Overlay? = null
@@ -183,6 +208,7 @@ object Feedpulse {
                 root = decor, screenX = x, screenY = y, exclude = overlay, resolvers = resolvers,
                 screen = options.screenName ?: activity.javaClass.name,
                 labelMaxChars = options.labelMaxChars,
+                drawingOrderResolver = drawingOrderResolver,
             ) ?: return
             finish(PickResult.Selected(target))
         }

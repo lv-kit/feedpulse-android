@@ -131,6 +131,19 @@ handle.cancel() // 途中で閉じる
 - `EditText` / パスワード入力の値は取らない（`contentDescription` のみ）。`WebView` 内は取らず、WebView 全体の bounds と URL（クエリ・フラグメント除去）だけ `path` に入る。
 - 明示 ID が自動取得より常に優先される（最も内側の明示 ID を持つ祖先または自身が選ばれる）。
 
+独自の子描画順を持つ `ViewGroup` では、そのグループの直接の子を前面から背面の順に返す。対象外のグループには `null` を返す。
+
+```kotlin
+val order = ChildDrawingOrderResolver { parent ->
+    if (parent === customContainer) listOf(frontView, backView) else null
+}
+val handle = Feedpulse.pickTarget(activity, PickerOptions(), order) { result ->
+    // result を処理する
+}
+```
+
+リストには直接の子を全て一度ずつ含める。`null`、不正なリスト、例外の場合は追加順の逆順を使う。Z 値の高い子は指定順より優先される。指定しない場合は従来どおり Z 値と追加順で判定する。
+
 ### 明示 ID（本番ではこちらに頼る）
 
 R8 / リソース縮小でクラス名・リソース名は壊れうる。

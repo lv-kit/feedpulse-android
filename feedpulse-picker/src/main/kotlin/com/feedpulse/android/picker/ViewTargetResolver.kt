@@ -21,6 +21,7 @@ internal object ViewTargetResolver {
         resolvers: List<ViewHitResolver>,
         screen: String,
         labelMaxChars: Int,
+        drawingOrderResolver: ChildDrawingOrderResolver? = null,
     ): FeedpulseTarget? {
         // root → leaf の View 列、または特殊 resolver が返した内側要素列。
         val viewChain = ArrayList<View>()
@@ -30,7 +31,7 @@ internal object ViewTargetResolver {
             viewChain.add(cur)
             val special = resolvers.firstNotNullOfOrNull { runCatching { it.resolve(cur!!, screenX, screenY) }.getOrNull() }
             if (special != null) { inner = special; break }
-            cur = if (cur is WebView) null else hitChild(cur, screenX, screenY, exclude)
+            cur = if (cur is WebView) null else hitChild(cur, screenX, screenY, exclude, drawingOrderResolver)
         }
         if (viewChain.isEmpty()) return null
 
@@ -56,10 +57,18 @@ internal object ViewTargetResolver {
     /** 利用者の画面ではなく、開発ツールが全面に重ねる透明な View。選択対象にしない。 */
     private val IGNORED_VIEW_CLASSES = setOf("com.facebook.react.views.debuggingoverlay.DebuggingOverlay")
 
-    private fun hitChild(parent: View, x: Int, y: Int, exclude: View?): View? {
+    private fun hitChild(parent: View, x: Int, y: Int, exclude: View?, resolver: ChildDrawingOrderResolver?): View? {
         if (parent !is ViewGroup) return null
-        // Z の高い View が前面。同じ Z なら追加順が後の View を優先する。
-        for (c in (0 until parent.childCount).map { parent.getChildAt(it) }.asReversed().sortedByDescending { it.z }) {
+        val children = (0 until parent.childCount).map { parent.getChildAt(it) }
+        // 不正な順序や例外は無視し、既定の順序で選択する。
+        val ordered = runCatching {
+            resolver?.frontToBack(parent)?.toList()?.takeIf { custom ->
+                custom.size == children.size && custom.toSet().size == children.size &&
+                    custom.all { it.parent === parent }
+            }
+        }.getOrNull() ?: children.asReversed()
+        // Z の高い View が前面。同じ Z なら指定順、指定がなければ逆追加順。
+        for (c in ordered.sortedByDescending { it.z }) {
             if (c === exclude || c.visibility != View.VISIBLE || c.alpha <= 0f) continue
             if (c.javaClass.name in IGNORED_VIEW_CLASSES) continue
             if (screenRect(c).contains(x, y)) return c
