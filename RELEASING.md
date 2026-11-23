@@ -3,7 +3,7 @@
 1. 各モジュールの `build.gradle.kts` の `version` を更新し、`CHANGELOG.md` に新バージョンの節を追加する。
 2. `./gradlew build publishToMavenLocal` が通ることを確認し、PR で `main` に取り込む。
 3. `main` で `git tag vX.Y.Z` を打って push する。
-4. タグ `vX.Y.Z` の push で `.github/workflows/release.yml` が GitHub Packages（`https://maven.pkg.github.com/lv-kit/feedpulse-android`）へ公開する。タグ名とモジュールの `version` を一致させる。
+4. タグ `vX.Y.Z` の push で `.github/workflows/release.yml` が GitHub Packages（`https://maven.pkg.github.com/lv-kit/feedpulse-android`）へ公開する（検証は含まない。手順2で済ませる）。タグ名とモジュールの `version` を一致させる。
 
 ## 利用側の設定
 
