@@ -110,7 +110,7 @@ Jetpack Compose からは `Feedpulse.client.config`（`StateFlow<FeedpulseConfig
 - Play Integrity は classic request のみ対応（サーバーが復号した nonce と challenge を照合するため）。`dev_insecure` は送らない。
 - Feedpulse 側で、プロジェクトに Android アプリ（package name と署名証明書の SHA-256）の登録が必要。
 
-## 該当箇所ピッカー（#115）
+## 該当箇所ピッカー
 
 画面上の要素を 1 タップで選び、投稿の `context.auto.target` に載せる値を返す。
 
@@ -161,7 +161,7 @@ Compose の自動取得（text / testTag）は `ViewRootForTest`（半内部 API
 ### target
 
 `{"platform":"android","screen":"…","id":"…","path":"…","rect":{"x","y","w","h"},"label":"…"}`。null のキーは出さない。rect は画面座標の px。
-上限（`TargetLimits`）: screen 512 / id 200 / path 512 / label 200 文字（web #106 の TARGET_LIMITS と同じ）。rect は有限・|値|≤1,000,000・w/h≥0。id か path のどちらか必須。
+上限（`TargetLimits`）: screen 512 / id 200 / path 512 / label 200 文字（web の TARGET_LIMITS と同じ）。rect は有限・|値|≤1,000,000・w/h≥0。id か path のどちらか必須。
 
 ## ビルド
 
