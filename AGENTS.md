@@ -13,10 +13,16 @@ FeedPulse（Cloudflare Workers 上のフィードバック収集・配信 SaaS�
 
 ## 検証
 
-CI（`.github/workflows/ci.yml`）と同じ形で実行する。JDK 17 と Android SDK が要る（`local.properties` の `sdk.dir` は Git 管理外）。
+PR 作成前に、次をローカルで実行する（CI では検証しない）。JDK 17 と Android SDK が要る（`local.properties` の `sdk.dir` は Git 管理外）。
 
-- `./gradlew build publishToMavenLocal`: CI の検証
+- `./gradlew build publishToMavenLocal`: ビルド・テスト・lint の検証
 - `JAVA_HOME=$(/usr/libexec/java_home -v 17) ./gradlew test`: 単体テストのみ
+
+## CI の方針
+
+デプロイ作業以外の検証用CI（GitHub Actions 等）は作らない。PR 作成前に `./gradlew build publishToMavenLocal` をローカルで実行し、すべて成功させる。実行できない場合や失敗した場合は PR を作成しない。CI を追加してよいのはデプロイ作業だけ。
+
+Branch protection に必須ステータスチェック `CI` が残っている場合は外す（ワークフローを廃止したため、残すと PR が merge できなくなる）。
 
 ## API 契約
 
@@ -93,6 +99,5 @@ AIエージェントは、次の3点に従う。他の節に merge の承認を�
 1. **worktree は後始末する。** 作業用に作成した git worktree は、作業を終了したとき、またはその PR を merge したときに削除する（`git worktree remove <path>`、不要になったローカルブランチの削除、`git worktree prune`）。未コミット・未 push の変更が残っているときは、削除せずユーザーへ報告する。
 2. **PR 作成までは自動で行う。** 変更を実装したら、確認を待たずにコミット・push・PR 作成まで実施する。
 3. **PR は自動で merge してよい。** ユーザーから「merge しない」「確認してから merge」などの明示的な指示がない限り、PR を merge する。次のときは merge せず、状況をユーザーへ報告する。
-   - 必須 CI が、課金・利用枠以外の理由で失敗している
    - 未対応の PR コメントや、ブロッキング指摘が残っている
    - production へのデプロイ、課金ジョブの起動、第三者リソース・認証情報の変更を伴う（これらは従来どおりユーザーの明示承認を要する。この規定の対象外）
