@@ -237,10 +237,12 @@ class FeedpulseClient internal constructor(
         val res = post("/v1/native/session", body, null)
         val json = parseObject(res.body)
         val jwt = json.optString("session")
-        if (jwt.isEmpty() || !json.has("expiresAt")) {
+        // expiresAt は数値だけを受ける（null・文字列などは JSONException を漏らさず不正応答にする）。
+        val expiresAt = (json.opt("expiresAt") as? Number)?.toLong()
+        if (jwt.isEmpty() || expiresAt == null) {
             throw FeedpulseException(FeedpulseErrorCode.UNEXPECTED_RESPONSE, "session の応答が不正", res.status)
         }
-        session = Session(jwt, json.getLong("expiresAt"))
+        session = Session(jwt, expiresAt)
         return jwt
     }
 
