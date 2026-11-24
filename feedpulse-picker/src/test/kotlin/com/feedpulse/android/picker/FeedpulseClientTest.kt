@@ -362,6 +362,35 @@ class FeedpulseClientTest {
         assertEquals(2, requests("/v1/native/challenge").size)
     }
 
+    private fun sessionBody(expiresAt: String?): MockResponse {
+        val field = if (expiresAt == null) "" else ",\"expiresAt\":$expiresAt"
+        return MockResponse().setResponseCode(200).setBody("{\"session\":\"jwt\"$field}")
+    }
+
+    private fun assertSessionRejected(expiresAt: String?) {
+        happyRoutes()
+        route("/v1/native/session", sessionBody(expiresAt))
+        val e = fail { client().ensureSession(forceNew = false) }
+        assertEquals(FeedpulseErrorCode.UNEXPECTED_RESPONSE, e.code)
+        assertEquals("session の応答が不正", e.message)
+    }
+
+    @Test
+    fun session_missingExpiresAtIsUnexpectedResponse() = assertSessionRejected(null)
+
+    @Test
+    fun session_nullExpiresAtIsUnexpectedResponse() = assertSessionRejected("null")
+
+    @Test
+    fun session_stringExpiresAtIsUnexpectedResponse() = assertSessionRejected("\"soon\"")
+
+    @Test
+    fun session_numericExpiresAtIsAccepted() {
+        happyRoutes()
+        route("/v1/native/session", sessionBody("1700000900"))
+        assertEquals("jwt", runBlocking { client().ensureSession(forceNew = false) })
+    }
+
     @Test
     fun attestorFailure_isReportedAndNotRetriedAsNetwork() {
         happyRoutes()
