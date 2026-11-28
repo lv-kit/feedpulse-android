@@ -25,8 +25,10 @@ This outputs mode/ref metadata and the reviewable file list.
 Pass all reviewable file paths to get their review checklists:
 
 ```bash
-ocr delegate rule <path1> <path2> ...
+ocr delegate rule [same range or commit arguments as preview] <path1> <path2> ...
 ```
+
+Pass the same `--from` / `--to` or `--commit` arguments used for preview. Omit them only for workspace mode.
 
 ### Step 3: Get Diffs and Review
 
@@ -56,7 +58,7 @@ git --no-pager diff --no-ext-diff --no-textconv --no-color --output="<absolute-d
 
 After Git exits with code 0, read and review the entire file in chunks, then remove it. If Git fails or times out, retry or record `skipped` with the error. Check unexpectedly empty output against a fresh preview.
 
-Then review focusing on: correctness, security, performance, error handling, concurrency, maintainability. Only comment on changed code (+ lines).
+Then review focusing on: correctness, security, performance, error handling, concurrency, maintainability. Review additions, modifications, and deletions in the selected diff, including removed APIs and their existing callers for regressions. Attach findings to the relevant changed location.
 
 ### Step 4: Report and Fix
 
